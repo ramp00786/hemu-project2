@@ -98,7 +98,7 @@ flowchart LR
 
 ### Frozen stack
 
-- **Language:** one FastAPI app (`project2/.venv`, Python 3.13; recreated 18 Aug)
+- **Language:** one FastAPI app (`root/.venv`, Python 3.13; recreated 18 Aug)
 - **UI:** HTML + vanilla JS + Tailwind in `app/static/` — **not React, not Vue, not Vercel**
 - **Local run:** `uvicorn app.main:app --host 0.0.0.0 --port 8000` → `http://127.0.0.1:8000`
 - **Data:** MSMARCO-XI Hindi `hinval.parquet`, first **5000** validation rows (HF has no `hi` config)
@@ -112,7 +112,7 @@ flowchart LR
 ## 3b. Repo structure (no separate frontend host)
 
 ```
-project2/
+root/
   one-time/download_dataset/
   one-time/create_vector_database/
   indexes/                 # index.faiss + chunks.json + sample_queries.json
@@ -128,9 +128,9 @@ Render runs `app/`. It must **not** download the 55.6 GB Hugging Face dump at bo
 
 ---
 
-## 3c. Python packages (`project2/.venv`)
+## 3c. Python packages (`root/.venv`)
 
-A virtualenv lives at `project2/.venv` (gitignored). Recreated 18 Aug 2026 (Python 3.13.7) and installed from `project2/requirements.txt` (same pins as `app/requirements.txt`).
+A virtualenv lives at `root/.venv` (gitignored). Recreated 18 Aug 2026 (Python 3.13.7) and installed from `root/requirements.txt` (same pins as `app/requirements.txt`).
 
 | Package | Why |
 |---|---|
@@ -148,7 +148,7 @@ Pip also pulled **dependencies**: `torch`, `transformers`, `tokenizers`, `huggin
 Activate:
 
 ```powershell
-cd project2
+cd root
 .\.venv\Scripts\Activate.ps1
 ```
 

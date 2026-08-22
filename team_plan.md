@@ -38,7 +38,7 @@ Protect order if time is short: **working live demo → latency numbers in repo 
 ## Repo structure
 
 ```
-project2/
+root/
   one-time/download_dataset/       # A — Hindi (`hi`) download notes/scripts
   one-time/create_vector_database/ # A — chunk + embed + FAISS build
   indexes/                         # A output, B+Render consume: index.faiss, chunks.json

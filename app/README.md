@@ -26,7 +26,7 @@ The 200ms target is the extractive path (`path: "extractive"`, field `latency_ms
 
 ## Environment
 
-Create `project2/.env` (do not commit):
+Create `root/.env` (do not commit):
 
 ```env
 SARVAM_API_KEY=...
@@ -40,7 +40,7 @@ LLM_FALLBACK=1
 
 ## Install
 
-From `project2` venv:
+From `root` venv:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -50,7 +50,7 @@ pip install -r app\requirements.txt
 ## Run local
 
 ```powershell
-cd project2
+cd root
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -73,5 +73,5 @@ Prints P50/P70/P100 for HTTP time, retrieve_ms, extractive `latency_ms` (200ms t
 ## Important
 
 - Query encoder must match index model: `sentence-transformers/all-MiniLM-L6-v2`
-- App reads prebuilt files from `project2/indexes/`
+- App reads prebuilt files from `root/indexes/`
 - Do not rebuild FAISS at request time

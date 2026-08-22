@@ -129,7 +129,7 @@ flowchart LR
 ### 1. Clone & install
 
 ```powershell
-cd project2
+cd root
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -263,7 +263,7 @@ Reports **P50 / P70 / P100** for HTTP time, `retrieve_ms`, extractive `latency_m
 ## Project structure
 
 ```
-project2/
+root/
 ├── app/
 │   ├── main.py              # FastAPI routes & startup
 │   ├── harness.py           # Voice / text / stream pipelines
