@@ -1,0 +1,457 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice RAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', '"Noto Sans Devanagari"', "system-ui", "sans-serif"],
+          },
+          colors: {
+            chat: { bg: "#212121", panel: "#171717", bubble: "#2f2f2f", line: "#424242" },
+          },
+          animation: {
+            bounceDot: "bounceDot 1.2s ease-in-out infinite",
+            pulseMic: "pulseMic 1.4s ease-out infinite",
+            fadeUp: "fadeUp 0.35s ease-out",
+          },
+          keyframes: {
+            bounceDot: {
+              "0%, 80%, 100%": { opacity: "0.25", transform: "translateY(0)" },
+              "40%": { opacity: "1", transform: "translateY(-3px)" },
+            },
+            pulseMic: {
+              "0%": { boxShadow: "0 0 0 0 rgba(239,68,68,0.45)" },
+              "70%": { boxShadow: "0 0 0 14px rgba(239,68,68,0)" },
+              "100%": { boxShadow: "0 0 0 0 rgba(239,68,68,0)" },
+            },
+            fadeUp: {
+              "0%": { opacity: "0", transform: "translateY(8px)" },
+              "100%": { opacity: "1", transform: "translateY(0)" },
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    textarea { field-sizing: content; }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.3s; }
+  </style>
+</head>
+<body class="h-dvh overflow-hidden bg-chat-bg font-sans text-zinc-100 antialiased">
+  <div class="flex h-full flex-col">
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-white/5 px-4">
+      <div class="flex items-center gap-2.5">
+        <div class="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-bold text-zinc-950">R</div>
+        <div>
+          <p class="text-sm font-semibold leading-none">Voice RAG</p>
+          <p class="mt-0.5 text-[11px] text-zinc-500">Grounded answers · HH Goa 2026</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/sample-question" class="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5">
+          Sample questions
+        </a>
+        <a href="/latency-report" class="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5">
+          Latency
+        </a>
+        <button id="newChatBtn" class="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5">
+          New chat
+        </button>
+      </div>
+    </header>
+
+    <div id="threadWrap" class="relative min-h-0 flex-1 overflow-y-auto">
+      <div id="emptyHero" class="flex h-full flex-col items-center justify-center px-6 text-center">
+        <div class="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400/90 to-sky-500/90 text-2xl font-bold text-zinc-950">R</div>
+        <h1 class="text-3xl font-semibold tracking-tight text-zinc-50 md:text-4xl">What can I help with?</h1>
+        <p class="mt-3 max-w-md text-sm text-zinc-400">Ask in English or Hindi. Sample questions are English-first; you get a fast extractive answer and a streamed LLM rewrite from the same passages.</p>
+        <div id="sampleChips" class="mt-6 flex max-w-xl flex-wrap justify-center gap-2"></div>
+      </div>
+
+      <div id="thread" class="mx-auto hidden w-full max-w-3xl space-y-6 px-4 py-8"></div>
+    </div>
+
+    <div class="shrink-0 bg-gradient-to-t from-chat-bg via-chat-bg to-transparent px-4 pb-5 pt-2">
+      <form id="composer" class="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-[28px] border border-white/10 bg-chat-bubble px-3 py-2 shadow-lg shadow-black/20">
+        <button type="button" id="micBtn" title="Voice" aria-label="Record voice" class="mb-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full text-zinc-300 transition hover:bg-white/10">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+        </button>
+        <textarea id="textQ" rows="1" placeholder="Ask anything…" class="max-h-36 min-h-[44px] w-full resize-none bg-transparent py-2.5 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500"></textarea>
+        <button type="submit" id="sendBtn" title="Send" aria-label="Send" class="mb-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4 10.6 5.4 16.2 11H4v2h12.2l-5.6 5.6L12 20l8-8z"/></svg>
+        </button>
+      </form>
+      <p id="statusLine" class="mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-500">Voice RAG can be wrong. Answers are grounded in retrieved MSMARCO-XI passages.</p>
+    </div>
+  </div>
+
+<script>
+let recorder = null;
+let chunks = [];
+let recording = false;
+let busy = false;
+
+const thread = document.getElementById("thread");
+const threadWrap = document.getElementById("threadWrap");
+const emptyHero = document.getElementById("emptyHero");
+const textQ = document.getElementById("textQ");
+const sendBtn = document.getElementById("sendBtn");
+const micBtn = document.getElementById("micBtn");
+const statusLine = document.getElementById("statusLine");
+const composer = document.getElementById("composer");
+
+function showThread() {
+  emptyHero.classList.add("hidden");
+  thread.classList.remove("hidden");
+}
+
+function scrollBottom() {
+  threadWrap.scrollTop = threadWrap.scrollHeight;
+}
+
+function el(html) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = html.trim();
+  return wrap.firstElementChild;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function userBubble(text) {
+  const row = el(`<div class="animate-fadeUp flex justify-end">
+    <div class="max-w-[85%] rounded-3xl rounded-br-md bg-chat-bubble px-4 py-2.5 text-[15px] leading-relaxed"></div>
+  </div>`);
+  row.firstElementChild.textContent = text;
+  thread.appendChild(row);
+  scrollBottom();
+}
+
+function typingRow() {
+  const row = el(`<div data-typing="1" class="animate-fadeUp flex gap-3">
+    <div class="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-xs font-bold text-zinc-950">R</div>
+    <div class="flex items-center gap-1 py-3">
+      <span class="dot h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounceDot"></span>
+      <span class="dot h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounceDot"></span>
+      <span class="dot h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounceDot"></span>
+    </div>
+  </div>`);
+  thread.appendChild(row);
+  scrollBottom();
+  return row;
+}
+
+function assistantCard(data) {
+  const err = data && data.error;
+  const ext = (data && data.extractive) || {};
+  const llm = (data && data.llm) || {};
+  const extText = err ? String(err) : (ext.answer || data.answer || "No extractive answer.");
+  const llmText = err ? String(err) : (llm.answer || "No LLM answer.");
+  const defaultTab = !llm.refused && llmText ? "llm" : "ext";
+
+  const row = el(`<div class="animate-fadeUp flex gap-3">
+    <div class="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-xs font-bold text-zinc-950">R</div>
+    <div class="min-w-0 flex-1">
+      <div class="mb-3 inline-flex rounded-full bg-white/5 p-0.5 text-xs">
+        <button type="button" data-tab="llm" class="tab-btn rounded-full px-3 py-1 font-medium">Generated</button>
+        <button type="button" data-tab="ext" class="tab-btn rounded-full px-3 py-1 font-medium">Fast extract</button>
+      </div>
+      <div data-pane="llm" class="hidden text-[15px] leading-7 text-zinc-100 whitespace-pre-wrap"></div>
+      <div data-pane="ext" class="hidden text-[15px] leading-7 text-zinc-100 whitespace-pre-wrap"></div>
+      <p class="mt-3 text-[11px] text-zinc-500" data-meta></p>
+    </div>
+  </div>`);
+
+  const llmPane = row.querySelector('[data-pane="llm"]');
+  const extPane = row.querySelector('[data-pane="ext"]');
+  const meta = row.querySelector("[data-meta]");
+  llmPane.textContent = llmText;
+  extPane.textContent = extText;
+
+  function setMeta(bits) {
+    meta.textContent = bits.filter(Boolean).join(" · ");
+  }
+  setMeta([
+    data.stt_ms ? "STT " + data.stt_ms + " ms" : "",
+    data.retrieve_ms != null ? "retrieve " + data.retrieve_ms + " ms" : "",
+    data.latency_ms != null ? "extractive " + data.latency_ms + " ms" : "",
+    data.generate_ms != null ? "LLM " + data.generate_ms + " ms" : "",
+    data.cached ? "cached" : "",
+  ]);
+
+  function setTab(name) {
+    row.querySelectorAll("[data-pane]").forEach((p) => p.classList.toggle("hidden", p.getAttribute("data-pane") !== name));
+    row.querySelectorAll(".tab-btn").forEach((b) => {
+      const on = b.getAttribute("data-tab") === name;
+      b.classList.toggle("bg-white", on);
+      b.classList.toggle("text-zinc-950", on);
+      b.classList.toggle("text-zinc-400", !on);
+    });
+  }
+  row.querySelectorAll(".tab-btn").forEach((b) => {
+    b.onclick = () => setTab(b.getAttribute("data-tab"));
+  });
+  setTab(defaultTab);
+  thread.appendChild(row);
+  scrollBottom();
+  return { row, llmPane, extPane, setMeta, setTab };
+}
+
+function setBusy(on) {
+  busy = on;
+  sendBtn.disabled = on;
+  textQ.disabled = on;
+}
+
+function setMic(on) {
+  recording = on;
+  micBtn.classList.toggle("bg-red-500", on);
+  micBtn.classList.toggle("text-white", on);
+  micBtn.classList.toggle("animate-pulseMic", on);
+  statusLine.textContent = on
+    ? "Listening… tap the mic again to send."
+    : "Voice RAG can be wrong. Answers are grounded in retrieved MSMARCO-XI passages.";
+}
+
+async function askText(question) {
+  if (!question || busy) return;
+  showThread();
+  userBubble(question);
+  textQ.value = "";
+  setBusy(true);
+  const typing = typingRow();
+  try {
+    const res = await fetch("/ask-text-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    if (!res.ok || !res.body) {
+      let detail = "HTTP " + res.status;
+      try {
+        const err = await res.json();
+        detail = err.detail || detail;
+      } catch (_) {}
+      typing.remove();
+      assistantCard({ error: detail });
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let card = null;
+    let streamed = "";
+    let retrieveMs = null;
+    let latencyMs = null;
+    let generateMs = null;
+    let cached = false;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch (_) { continue; }
+
+        if (ev.type === "error") {
+          typing.remove();
+          if (!card) assistantCard({ error: ev.error || "Stream error" });
+          else {
+            card.llmPane.textContent = ev.error || "Stream error";
+            card.setTab("llm");
+          }
+          return;
+        }
+
+        if (ev.type === "extractive") {
+          typing.remove();
+          retrieveMs = ev.retrieve_ms;
+          latencyMs = ev.latency_ms;
+          cached = !!ev.cached;
+          card = assistantCard({
+            answer: ev.answer,
+            retrieve_ms: retrieveMs,
+            latency_ms: latencyMs,
+            cached: cached,
+            extractive: { answer: ev.answer, refused: !!ev.refused },
+            llm: { answer: "Generating…", refused: false },
+          });
+          card.setTab(ev.refused ? "ext" : "llm");
+          card.llmPane.textContent = ev.refused ? (ev.answer || "…") : "";
+          continue;
+        }
+
+        if (ev.type === "llm_delta" && card) {
+          streamed += ev.text || "";
+          card.llmPane.textContent = streamed;
+          card.setTab("llm");
+          scrollBottom();
+          continue;
+        }
+
+        if (ev.type === "llm" && card) {
+          generateMs = ev.generate_ms;
+          cached = cached || !!ev.cached;
+          const finalText = ev.answer || streamed || "No LLM answer.";
+          // If fallback replaced streamed NO_ANSWER text, swap in final.
+          if (finalText !== streamed) card.llmPane.textContent = finalText;
+          if (ev.refused) card.setTab("ext");
+          else card.setTab("llm");
+          card.setMeta([
+            retrieveMs != null ? "retrieve " + retrieveMs + " ms" : "",
+            latencyMs != null ? "extractive " + latencyMs + " ms" : "",
+            generateMs != null ? "LLM " + generateMs + " ms" : "",
+            cached ? "cached" : "",
+          ]);
+          continue;
+        }
+
+        if (ev.type === "done" && card) {
+          generateMs = ev.generate_ms != null ? ev.generate_ms : generateMs;
+          retrieveMs = ev.retrieve_ms != null ? ev.retrieve_ms : retrieveMs;
+          latencyMs = ev.latency_ms != null ? ev.latency_ms : latencyMs;
+          cached = cached || !!ev.cached;
+          card.setMeta([
+            retrieveMs != null ? "retrieve " + retrieveMs + " ms" : "",
+            latencyMs != null ? "extractive " + latencyMs + " ms" : "",
+            generateMs != null ? "LLM " + generateMs + " ms" : "",
+            cached ? "cached" : "",
+          ]);
+        }
+      }
+    }
+    if (typing.isConnected) typing.remove();
+    if (!card) assistantCard({ error: "Empty stream response." });
+  } catch (err) {
+    if (typing.isConnected) typing.remove();
+    assistantCard({ error: String(err) });
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function startMic() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+    chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    recorder.start();
+    setMic(true);
+  } catch (err) {
+    showThread();
+    assistantCard({ error: "Microphone unavailable: " + String(err) });
+  }
+}
+
+async function stopMicAndAsk() {
+  if (!recorder) return;
+  setMic(false);
+  recorder.stop();
+  recorder.onstop = async () => {
+    showThread();
+    userBubble("Voice question");
+    setBusy(true);
+    const typing = typingRow();
+    const blob = new Blob(chunks, { type: "audio/webm" });
+    const fd = new FormData();
+    fd.append("audio", blob, "question.webm");
+    try {
+      const res = await fetch("/ask", { method: "POST", body: fd });
+      const data = await res.json();
+      typing.remove();
+      const label = (data.transcript || "").trim();
+      if (label) {
+        const last = thread.querySelectorAll(".justify-end");
+        const bubble = last[last.length - 1];
+        if (bubble) bubble.firstElementChild.textContent = label;
+      }
+      if (!res.ok) assistantCard({ error: data.detail || "HTTP " + res.status });
+      else assistantCard(data);
+    } catch (err) {
+      typing.remove();
+      assistantCard({ error: String(err) });
+    } finally {
+      setBusy(false);
+      recorder.stream.getTracks().forEach((t) => t.stop());
+      recorder = null;
+    }
+  };
+}
+
+composer.addEventListener("submit", (e) => {
+  e.preventDefault();
+  askText(textQ.value.trim());
+});
+
+textQ.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    askText(textQ.value.trim());
+  }
+});
+
+micBtn.onclick = () => {
+  if (busy) return;
+  if (recording) stopMicAndAsk();
+  else startMic();
+};
+
+document.getElementById("newChatBtn").onclick = () => {
+  thread.innerHTML = "";
+  thread.classList.add("hidden");
+  emptyHero.classList.remove("hidden");
+  textQ.value = "";
+};
+
+textQ.addEventListener("input", () => {
+  textQ.style.height = "auto";
+  textQ.style.height = Math.min(textQ.scrollHeight, 144) + "px";
+});
+
+fetch("/api/sample-questions?limit=4")
+  .then((r) => r.json())
+  .then((data) => {
+    const wrap = document.getElementById("sampleChips");
+    (data.questions || []).forEach((row) => {
+      const q = row.query_en || row.question || row.query_hi || "";
+      if (!q) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-left text-xs text-zinc-300 transition hover:border-emerald-400/40 hover:bg-white/10";
+      btn.textContent = q;
+      btn.onclick = () => askText(q);
+      wrap.appendChild(btn);
+    });
+  })
+  .catch(() => {});
+
+const starter = new URLSearchParams(location.search).get("q");
+if (starter && starter.trim()) {
+  history.replaceState({}, "", "/");
+  askText(starter.trim());
+}
+</script>
+</body>
+</html>

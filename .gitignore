@@ -1,0 +1,17 @@
+# Downloaded MSMARCO slices (regenerate with download.py)
+one-time/download_dataset/data/*.jsonl
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# FAISS / index artifacts (keep .gitkeep)
+indexes/*
+!indexes/.gitkeep

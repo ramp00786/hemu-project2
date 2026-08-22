@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Latency Report · Voice RAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['"Plus Jakarta Sans"', "system-ui", "sans-serif"] },
+          colors: {
+            chat: { bg: "#212121", panel: "#171717", bubble: "#2f2f2f", line: "#424242" },
+          },
+          animation: { fadeUp: "fadeUp 0.35s ease-out", pulseBar: "pulseBar 1.5s ease-in-out infinite" },
+          keyframes: {
+            fadeUp: { "0%": { opacity: "0", transform: "translateY(8px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
+            pulseBar: { "0%,100%": { opacity: "0.5" }, "50%": { opacity: "1" } },
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="min-h-dvh bg-chat-bg font-sans text-zinc-100 antialiased">
+  <header class="sticky top-0 z-20 border-b border-white/5 bg-chat-bg/90 backdrop-blur-md">
+    <div class="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+      <a href="/" class="flex items-center gap-2.5">
+        <div class="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-bold text-zinc-950">R</div>
+        <div>
+          <p class="text-sm font-semibold leading-none">Latency Report</p>
+          <p class="mt-0.5 text-[11px] text-zinc-500">Voice RAG · cold vs cached benchmarks</p>
+        </div>
+      </a>
+      <nav class="flex items-center gap-2">
+        <a href="/" class="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5">Ask</a>
+        <a href="/sample-question" class="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5">Samples</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-8">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-semibold tracking-tight">Performance dashboard</h1>
+        <p class="mt-1 text-sm text-zinc-400">100 sample queries · each runs twice (cold pass then warm cache hit).</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <span id="statusBadge" class="hidden rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-zinc-300"></span>
+        <span id="metaLine" class="text-xs text-zinc-500"></span>
+        <button id="recalcBtn" class="rounded-full bg-gradient-to-r from-emerald-400 to-sky-500 px-5 py-2 text-sm font-semibold text-zinc-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+          Re-calculate
+        </button>
+      </div>
+    </div>
+
+    <div id="loading" class="mt-10 rounded-2xl border border-white/10 bg-chat-bubble p-10 text-center">
+      <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-400"></div>
+      <p class="text-sm font-medium text-zinc-200">Running benchmark…</p>
+      <p class="mt-1 text-xs text-zinc-500">First load runs 100 queries (cold + warm) and may take several minutes.</p>
+    </div>
+
+    <div id="errorBox" class="mt-10 hidden rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-300"></div>
+
+    <div id="dashboard" class="mt-8 hidden animate-fadeUp space-y-8">
+      <section id="cards" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></section>
+
+      <section class="rounded-2xl border border-white/10 bg-chat-bubble p-6">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">Cold vs warm HTTP</h2>
+        <div id="bars" class="mt-5 space-y-4"></div>
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-2">
+        <div class="rounded-2xl border border-white/10 bg-chat-bubble p-6">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">Answer paths</h2>
+          <div id="paths" class="mt-4 flex flex-wrap gap-2"></div>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-chat-bubble p-6">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">Server health</h2>
+          <dl id="health" class="mt-4 space-y-2 text-sm"></dl>
+        </div>
+      </section>
+
+      <section class="overflow-hidden rounded-2xl border border-white/10 bg-chat-bubble">
+        <div class="border-b border-white/5 px-6 py-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">Per-query breakdown</h2>
+          <p class="mt-1 text-xs text-zinc-500">P50 · P70 · P100 badges mark cold HTTP rank (same formula as summary cards).</p>
+          <div class="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-wide">
+            <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-emerald-300">P50</span>
+            <span class="rounded-full bg-amber-500/20 px-2 py-0.5 text-amber-300">P70</span>
+            <span class="rounded-full bg-orange-500/20 px-2 py-0.5 text-orange-300">P100</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[720px] text-left text-sm">
+            <thead class="border-b border-white/5 bg-white/[0.02] text-xs uppercase tracking-wide text-zinc-500">
+              <tr>
+                <th class="px-4 py-3 font-medium">Question</th>
+                <th class="px-4 py-3 font-medium">Cold HTTP</th>
+                <th class="px-4 py-3 font-medium">Warm HTTP</th>
+                <th class="px-4 py-3 font-medium">Retrieve</th>
+                <th class="px-4 py-3 font-medium">Extractive</th>
+                <th class="px-4 py-3 font-medium">LLM</th>
+                <th class="px-4 py-3 font-medium">Path</th>
+              </tr>
+            </thead>
+            <tbody id="queryTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const loading = document.getElementById("loading");
+    const dashboard = document.getElementById("dashboard");
+    const errorBox = document.getElementById("errorBox");
+    const recalcBtn = document.getElementById("recalcBtn");
+    const metaLine = document.getElementById("metaLine");
+    const statusBadge = document.getElementById("statusBadge");
+    const TARGET_MS = 200;
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function fmtMs(v) {
+      if (v == null || Number.isNaN(v)) return "—";
+      return Math.round(v) + " ms";
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return "";
+      try {
+        return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      } catch (_) {
+        return iso;
+      }
+    }
+
+    function targetBadge(p50) {
+      if (!p50) return "";
+      const ok = p50 <= TARGET_MS;
+      return `<span class="mt-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${ok ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300"}">${ok ? "≤200ms target" : "over 200ms"}</span>`;
+    }
+
+    function percentileRankIndex(n, p) {
+      if (n <= 0) return 0;
+      return Math.max(0, Math.min(n - 1, Math.floor((p / 100) * n) - 1));
+    }
+
+    function percentileMarks(values, ps = [50, 70, 100]) {
+      const indexed = values.map((v, i) => ({ v: Number(v) || 0, i }));
+      indexed.sort((a, b) => a.v - b.v);
+      const n = indexed.length;
+      const byRow = {};
+      for (const p of ps) {
+        const rankIdx = percentileRankIndex(n, p);
+        const origIdx = indexed[rankIdx]?.i;
+        if (origIdx == null) continue;
+        if (!byRow[origIdx]) byRow[origIdx] = [];
+        byRow[origIdx].push(p);
+      }
+      return byRow;
+    }
+
+    function pctBadge(p) {
+      if (p === 50) return `<span class="ml-1.5 rounded-full bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-200 ring-1 ring-emerald-400/40">P50</span>`;
+      if (p === 70) return `<span class="ml-1.5 rounded-full bg-amber-500/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-200 ring-1 ring-amber-400/40">P70</span>`;
+      return `<span class="ml-1.5 rounded-full bg-orange-500/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange-200 ring-1 ring-orange-400/40">P100</span>`;
+    }
+
+    function pctRowClass(markers) {
+      if (!markers?.length) return "";
+      if (markers.includes(100)) return "bg-orange-500/[0.08] ring-1 ring-inset ring-orange-400/30";
+      if (markers.includes(70)) return "bg-amber-500/[0.07] ring-1 ring-inset ring-amber-400/25";
+      if (markers.includes(50)) return "bg-emerald-500/[0.07] ring-1 ring-inset ring-emerald-400/25";
+      return "";
+    }
+
+    function pctCellClass(markers) {
+      if (!markers?.length) return "";
+      if (markers.includes(100)) return "bg-orange-500/15 font-semibold text-orange-200";
+      if (markers.includes(70)) return "bg-amber-500/15 font-semibold text-amber-200";
+      if (markers.includes(50)) return "bg-emerald-500/15 font-semibold text-emerald-200";
+      return "";
+    }
+
+    function statCard(title, stats, accent, extra) {
+      const s = stats || {};
+      return `<div class="rounded-2xl border border-white/10 bg-chat-bubble p-5">
+        <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">${escapeHtml(title)}</p>
+        <p class="mt-2 text-3xl font-bold ${accent}">${fmtMs(s.p50)}</p>
+        <p class="mt-1 text-xs text-zinc-500">P50 · P70 ${fmtMs(s.p70)} · P100 ${fmtMs(s.p100)}</p>
+        <p class="text-[11px] text-zinc-600">avg ${fmtMs(s.avg)}</p>
+        ${extra || ""}
+      </div>`;
+    }
+
+    function renderReport(report, reportCached) {
+      const summary = report.summary || {};
+      const health = report.health || {};
+      const qc = health.query_cache || {};
+
+      statusBadge.classList.toggle("hidden", false);
+      statusBadge.textContent = reportCached ? "Cached report" : "Fresh run";
+      statusBadge.className = "rounded-full px-3 py-1 text-xs font-medium " +
+        (reportCached ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300");
+
+      metaLine.textContent = `${report.query_count || 0} queries · ${fmtTime(report.generated_at)}`;
+
+      document.getElementById("cards").innerHTML = [
+        statCard("Cold HTTP P50", summary.cold_http, "text-orange-300"),
+        statCard("Warm HTTP P50", summary.warm_http, "text-sky-300"),
+        statCard("Retrieve P50", summary.retrieve_ms, "text-violet-300"),
+        statCard("Extractive P50", summary.extractive_ms, "text-emerald-300", targetBadge(summary.extractive_ms?.p50)),
+        statCard("LLM generate P50", summary.generate_ms, "text-amber-300"),
+        `<div class="rounded-2xl border border-white/10 bg-chat-bubble p-5">
+          <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">Query cache</p>
+          <p class="mt-2 text-3xl font-bold text-zinc-100">${qc.hits ?? 0} <span class="text-lg font-normal text-zinc-500">hits</span></p>
+          <p class="mt-1 text-xs text-zinc-500">${qc.misses ?? 0} misses · ${qc.size ?? 0} stored</p>
+          <p class="text-[11px] text-zinc-600">device ${escapeHtml(health.embed_device || "—")}</p>
+        </div>`,
+      ].join("");
+
+      const coldP50 = summary.cold_http?.p50 || 1;
+      const warmP50 = summary.warm_http?.p50 || 0;
+      const maxBar = Math.max(coldP50, warmP50, 1);
+      document.getElementById("bars").innerHTML = [
+        { label: "Cold HTTP P50", value: coldP50, color: "from-orange-400 to-red-400" },
+        { label: "Warm HTTP P50", value: warmP50, color: "from-sky-400 to-emerald-400" },
+        { label: "Retrieve P50", value: summary.retrieve_ms?.p50 || 0, color: "from-violet-400 to-purple-400" },
+        { label: "Extractive P50", value: summary.extractive_ms?.p50 || 0, color: "from-emerald-400 to-teal-400" },
+      ].map((row) => {
+        const pct = Math.max(4, Math.round((row.value / maxBar) * 100));
+        return `<div>
+          <div class="mb-1 flex justify-between text-xs"><span class="text-zinc-400">${row.label}</span><span class="font-medium text-zinc-200">${fmtMs(row.value)}</span></div>
+          <div class="h-2 overflow-hidden rounded-full bg-white/5"><div class="h-full rounded-full bg-gradient-to-r ${row.color}" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join("");
+
+      const paths = report.paths || {};
+      document.getElementById("paths").innerHTML = Object.entries(paths).map(([k, v]) =>
+        `<span class="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-zinc-300">${escapeHtml(k)}: ${v}</span>`
+      ).join("") || '<span class="text-xs text-zinc-500">No data</span>';
+
+      document.getElementById("health").innerHTML = [
+        ["Embedding model", health.embedding_model],
+        ["Device", health.embed_device],
+        ["Chunks indexed", health.num_chunks],
+        ["Cache enabled", qc.enabled ? "yes" : "no"],
+      ].map(([k, v]) => `<div class="flex justify-between gap-4"><dt class="text-zinc-500">${k}</dt><dd class="text-right text-zinc-200">${escapeHtml(String(v ?? "—"))}</dd></div>`).join("");
+
+      const queries = report.queries || [];
+      const coldMarks = percentileMarks(queries.map((q) => q.cold_http_ms));
+      const warmMarks = percentileMarks(queries.map((q) => q.warm_http_ms));
+      const retrieveMarks = percentileMarks(queries.map((q) => q.retrieve_ms));
+      const extractiveRows = queries.map((q, i) => ({ i, v: q.latency_ms, path: q.path })).filter((x) => x.path === "extractive");
+      const extractiveMarks = {};
+      if (extractiveRows.length) {
+        const extValues = extractiveRows.map((x) => x.v);
+        const extByOrig = percentileMarks(extValues);
+        extractiveRows.forEach((row, rankIdx) => {
+          const tags = extByOrig[rankIdx];
+          if (tags) extractiveMarks[row.i] = tags;
+        });
+      }
+      const llmMarks = percentileMarks(queries.map((q) => q.generate_ms));
+
+      document.getElementById("queryTable").innerHTML = queries.map((row, idx) => {
+        const coldTags = coldMarks[idx] || [];
+        const rowPctCls = pctRowClass(coldTags);
+        const extOk = row.path === "extractive" && row.latency_ms <= TARGET_MS;
+        const extTags = extractiveMarks[idx] || [];
+        const coldBadges = coldTags.map(pctBadge).join("");
+        const warmBadges = (warmMarks[idx] || []).map(pctBadge).join("");
+        const retrieveBadges = (retrieveMarks[idx] || []).map(pctBadge).join("");
+        const extBadges = extTags.map(pctBadge).join("");
+        const llmBadges = (llmMarks[idx] || []).map(pctBadge).join("");
+        return `<tr class="border-b border-white/5 ${rowPctCls} hover:bg-white/[0.03]">
+          <td class="max-w-xs px-4 py-3 text-zinc-200" title="${escapeHtml(row.question)}">${escapeHtml(row.question.length > 56 ? row.question.slice(0, 56) + "…" : row.question)}</td>
+          <td class="px-4 py-3 font-mono text-xs text-orange-300 ${pctCellClass(coldTags)}">${fmtMs(row.cold_http_ms)}${coldBadges}</td>
+          <td class="px-4 py-3 font-mono text-xs text-sky-300 ${pctCellClass(warmMarks[idx])}">${fmtMs(row.warm_http_ms)}${warmBadges}${row.warm_cached ? ' <span class="text-zinc-600">cached</span>' : ""}</td>
+          <td class="px-4 py-3 font-mono text-xs text-violet-300 ${pctCellClass(retrieveMarks[idx])}">${fmtMs(row.retrieve_ms)}${retrieveBadges}</td>
+          <td class="px-4 py-3 font-mono text-xs ${extOk ? "text-emerald-300" : "text-zinc-300"} ${pctCellClass(extTags)}">${fmtMs(row.latency_ms)}${extBadges}</td>
+          <td class="px-4 py-3 font-mono text-xs text-amber-300 ${pctCellClass(llmMarks[idx])}">${fmtMs(row.generate_ms)}${llmBadges}</td>
+          <td class="px-4 py-3"><span class="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">${escapeHtml(row.path || "—")}</span></td>
+        </tr>`;
+      }).join("");
+
+      loading.classList.add("hidden");
+      errorBox.classList.add("hidden");
+      dashboard.classList.remove("hidden");
+    }
+
+    function showError(msg) {
+      loading.classList.add("hidden");
+      dashboard.classList.add("hidden");
+      errorBox.classList.remove("hidden");
+      errorBox.textContent = msg;
+    }
+
+    async function loadReport(recalculate) {
+      recalcBtn.disabled = true;
+      if (recalculate) {
+        loading.classList.remove("hidden");
+        dashboard.classList.add("hidden");
+        errorBox.classList.add("hidden");
+        loading.querySelector("p.text-sm").textContent = "Re-calculating…";
+      }
+      try {
+        const url = recalculate ? "/api/latency-report/recalculate?max_queries=100" : "/api/latency-report?max_queries=100";
+        const res = await fetch(url, { method: recalculate ? "POST" : "GET" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.detail || "Failed to load report");
+        }
+        renderReport(data.report, !!data.report_cached);
+      } catch (err) {
+        showError(String(err.message || err));
+      } finally {
+        recalcBtn.disabled = false;
+        loading.querySelector("p.text-sm").textContent = "Running benchmark…";
+      }
+    }
+
+    recalcBtn.addEventListener("click", () => loadReport(true));
+    loadReport(false);
+  </script>
+</body>
+</html>
