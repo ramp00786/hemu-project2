@@ -15,3 +15,4 @@ venv/
 # FAISS / index artifacts (keep .gitkeep)
 indexes/*
 !indexes/.gitkeep
+!indexes/sample_queries.json

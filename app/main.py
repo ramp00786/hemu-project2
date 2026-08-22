@@ -91,10 +91,73 @@ def _clean_en_query(text: str) -> str:
     return (text or "").strip().lstrip(". ").strip()
 
 
-def _build_sample_questions(chunks: list[dict], limit: int = 18) -> list[dict]:
-    """Sample questions whose query_id exists as a selected English passage in chunks.json."""
-    qids: dict[int, dict] = {}
+def _chunk_id_by_query(chunks: list[dict]) -> dict[int, str | None]:
+    """Map query_id -> chunk id for selected English passage_full rows."""
+    lookup: dict[int, str | None] = {}
     for item in chunks:
+        if item.get("strategy") != "passage_full" or item.get("language") != "en":
+            continue
+        try:
+            selected = int(item.get("is_selected") or 0)
+        except (TypeError, ValueError):
+            selected = 0
+        if selected != 1:
+            continue
+        qid = item.get("query_id")
+        if qid is None:
+            continue
+        qid = int(qid)
+        if qid not in lookup:
+            lookup[qid] = item.get("id")
+    return lookup
+
+
+def _build_sample_questions(chunks: list[dict], limit: int = 18) -> list[dict]:
+    """Sample questions for UI and latency bench.
+
+    Prefer indexes/sample_queries.json (shipped in git) so clone setups work
+    without the offline JSONL slice. Supplement from chunks + JSONL only if needed.
+    """
+    sample_path = PROJECT_ROOT / "indexes" / "sample_queries.json"
+    chunk_ids = _chunk_id_by_query(chunks)
+    out: list[dict] = []
+    seen: set[int] = set()
+
+    if sample_path.exists():
+        for row in json.loads(sample_path.read_text(encoding="utf-8")):
+            if len(out) >= limit:
+                break
+            qid = row.get("query_id")
+            if qid is None:
+                continue
+            qid = int(qid)
+            if qid in seen:
+                continue
+            query_en = _clean_en_query(row.get("query_en") or "")
+            query_hi = (row.get("query_hi") or "").strip()
+            question = query_en or query_hi
+            if not question:
+                continue
+            seen.add(qid)
+            out.append(
+                {
+                    "query_id": qid,
+                    "question": question,
+                    "query_hi": query_hi,
+                    "query_en": query_en,
+                    "query_type": "",
+                    "chunk_id": chunk_ids.get(qid),
+                }
+            )
+
+    if len(out) >= limit:
+        return out[:limit]
+
+    # Extra rows when sample_queries.json is short: scan index + optional JSONL text.
+    qids: dict[int, dict] = {row["query_id"]: row for row in out}
+    for item in chunks:
+        if len(qids) >= limit:
+            break
         if item.get("strategy") != "passage_full" or item.get("language") != "en":
             continue
         try:
@@ -114,36 +177,18 @@ def _build_sample_questions(chunks: list[dict], limit: int = 18) -> list[dict]:
             "query_type": item.get("query_type") or "",
             "chunk_id": item.get("id"),
         }
-        if len(qids) >= limit:
-            break
 
-    # Fallback: use prebuilt sample_queries.json when no EN selected rows in index.
-    if not qids:
-        sample_path = PROJECT_ROOT / "indexes" / "sample_queries.json"
-        if sample_path.exists():
-            for row in json.loads(sample_path.read_text(encoding="utf-8")):
-                qid = row.get("query_id")
-                if qid is None:
-                    continue
-                qid = int(qid)
-                if qid in qids:
-                    continue
-                q_en = _clean_en_query(row.get("query_en") or "")
-                if not q_en:
-                    continue
-                qids[qid] = {"query_id": qid, "query_type": "", "chunk_id": None}
-                if len(qids) >= limit:
-                    break
-
-    texts = _query_text_for_ids(set(qids))
-    out: list[dict] = []
+    texts = _query_text_for_ids(set(qids) - seen)
     for qid, meta in qids.items():
+        if qid in seen:
+            continue
         row = texts.get(qid) or {}
         query_en = _clean_en_query(row.get("query_en") or "")
         query_hi = (row.get("query_hi") or "").strip()
         question = query_en or query_hi
         if not question:
             continue
+        seen.add(qid)
         out.append(
             {
                 "query_id": qid,
@@ -154,7 +199,10 @@ def _build_sample_questions(chunks: list[dict], limit: int = 18) -> list[dict]:
                 "chunk_id": meta.get("chunk_id"),
             }
         )
-    return out
+        if len(out) >= limit:
+            break
+
+    return out[:limit]
 
 
 def _result_payload(result) -> dict:
